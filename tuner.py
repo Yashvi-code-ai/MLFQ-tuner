@@ -6,9 +6,11 @@ Tests multiple workloads using the team's actual scheduler.
 
 import csv
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 
 from mlfq.scheduler import MLFQScheduler, Process
+
 
 OUTPUT_DIR = Path("tuner_results")
 
@@ -28,7 +30,12 @@ WORKLOADS = {
     ],
 }
 
-QUANTA_OPTIONS = [(1, 2, 4), (2, 4, 8), (3, 6, 12)]
+QUANTA_OPTIONS = [
+    (1, 2, 4),
+    (2, 4, 8),
+    (3, 6, 12),
+]
+
 BOOST_OPTIONS = [None, 10, 20]
 
 METRICS = [
@@ -41,15 +48,24 @@ METRICS = [
 
 
 def make_processes(workload):
-    """Create a fresh workload for every scheduler run."""
+    """Create fresh processes for every scheduler run."""
     return [
-        Process(pid=pid, arrival_time=arrival, burst_time=burst)
+        Process(
+            pid=pid,
+            arrival_time=arrival,
+            burst_time=burst,
+        )
         for pid, arrival, burst in workload
     ]
 
 
 def run_experiment(workload_name, workload, quanta, boost):
-    scheduler = MLFQScheduler(quanta=quanta, boost_interval=boost)
+    """Run the actual MLFQ scheduler and collect its metrics."""
+    scheduler = MLFQScheduler(
+        quanta=quanta,
+        boost_interval=boost,
+    )
+
     result = scheduler.run(make_processes(workload))
 
     row = {
@@ -57,15 +73,22 @@ def run_experiment(workload_name, workload, quanta, boost):
         "quanta": str(quanta),
         "boost_interval": "Disabled" if boost is None else boost,
     }
+
     row.update(result["metrics"])
     return row
 
 
 def save_results(rows):
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    """Save all experiment results to a CSV file."""
+    if not rows:
+        print("No results to save.")
+        return
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUTPUT_DIR / "multi_workload_results.csv"
 
     fields = list(rows[0].keys())
+
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
@@ -73,18 +96,23 @@ def save_results(rows):
 
     print(f"\nCSV saved: {path}")
 
-   
+
 def create_graphs(rows):
-    """Generate readable graphs with actual MLFQ configuration labels."""
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    """Generate comparison graphs for every performance metric."""
+    if not rows:
+        print("No results available for graph generation.")
+        return
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     for metric in METRICS:
         fig, axes = plt.subplots(
             nrows=len(WORKLOADS),
             ncols=1,
-            figsize=(14, 15)
+            figsize=(14, 15),
         )
 
+        # Make axes iterable if there is only one workload.
         if len(WORKLOADS) == 1:
             axes = [axes]
 
@@ -98,38 +126,45 @@ def create_graphs(rows):
                 f"Q={row['quanta']}\nB={row['boost_interval']}"
                 for row in selected
             ]
-            values = [float(row[metric]) for row in selected]
 
-            
-            ax.bar(range(len(values)), values)
+            values = [
+                float(row[metric])
+                for row in selected
+            ]
 
-            if all(value == 0 for value in values):
+            positions = range(len(values))
+            ax.bar(positions, values)
+
+            # Make all-zero results visible instead of leaving a blank plot.
+            if values and all(value == 0 for value in values):
                 ax.text(
-                    0.5, 0.5,
+                    0.5,
+                    0.5,
                     "All configurations: 0.00",
                     transform=ax.transAxes,
                     ha="center",
                     va="center",
-                    fontsize=12
+                    fontsize=12,
                 )
 
-            ax.set_xticks(range(len(labels)))
-
+            ax.set_xticks(list(positions))
             ax.set_xticklabels(
                 labels,
                 rotation=45,
                 ha="right",
-                fontsize=8
+                fontsize=8,
             )
+
             ax.set_title(f"{workload_name} Workload")
             ax.set_ylabel(metric.replace("_", " ").title())
             ax.grid(axis="y", linestyle="--", alpha=0.4)
 
         fig.suptitle(
-            f"MLFQ Configuration Comparison: "
+            "MLFQ Configuration Comparison: "
             f"{metric.replace('_', ' ').title()}",
-            fontsize=14
+            fontsize=14,
         )
+
         fig.tight_layout(rect=[0, 0, 1, 0.97])
 
         path = OUTPUT_DIR / f"multi_{metric}.png"
@@ -139,9 +174,43 @@ def create_graphs(rows):
         print(f"Graph saved: {path}")
 
 
+def report_best_configurations(rows):
+    """Report every configuration tied for lowest waiting time."""
+    print(
+        "\nBest configuration by workload "
+        "(lowest average waiting time):"
+    )
+
+    for workload_name in WORKLOADS:
+        candidates = [
+            row for row in rows
+            if row["workload"] == workload_name
+        ]
+
+        if not candidates:
+            print(f"{workload_name}: No results available.")
+            continue
+
+        best_waiting_time = min(
+            row["average_waiting_time"]
+            for row in candidates
+        )
+
+        for best in candidates:
+            if best["average_waiting_time"] == best_waiting_time:
+                print(
+                    f"{workload_name}: "
+                    f"Quanta={best['quanta']}, "
+                    f"Boost={best['boost_interval']}, "
+                    f"Waiting={best['average_waiting_time']:.2f}"
+                )
+
 
 def main():
     rows = []
+
+    print("MLFQ Tuner & Performance Analysis")
+    print("=" * 45)
 
     for workload_name, workload in WORKLOADS.items():
         print(f"\n=== {workload_name} workload ===")
@@ -149,12 +218,17 @@ def main():
         for quanta in QUANTA_OPTIONS:
             for boost in BOOST_OPTIONS:
                 row = run_experiment(
-                    workload_name, workload, quanta, boost
+                    workload_name,
+                    workload,
+                    quanta,
+                    boost,
                 )
+
                 rows.append(row)
 
                 print(
-                    f"Quanta={quanta}, Boost={row['boost_interval']}, "
+                    f"Quanta={quanta}, "
+                    f"Boost={row['boost_interval']}, "
                     f"Waiting={row['average_waiting_time']:.2f}, "
                     f"Turnaround={row['average_turnaround_time']:.2f}, "
                     f"Response={row['average_response_time']:.2f}, "
@@ -164,19 +238,10 @@ def main():
 
     print(f"\nCompleted {len(rows)} experiments.")
 
-    # Best configuration per workload, using waiting time as the criterion.
-    print("\nBest configuration by workload (lowest average waiting time):")
-    for workload_name in WORKLOADS:
-        candidates = [r for r in rows if r["workload"] == workload_name]
-        best = min(candidates, key=lambda r: r["average_waiting_time"])
-        print(
-            f"{workload_name}: quanta={best['quanta']}, "
-            f"boost={best['boost_interval']}, "
-            f"waiting={best['average_waiting_time']:.2f}"
-        )
-
+    report_best_configurations(rows)
     save_results(rows)
     create_graphs(rows)
+
     print("\nAll multi-workload experiments completed.")
 
 
