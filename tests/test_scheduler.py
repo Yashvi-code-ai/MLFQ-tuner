@@ -32,6 +32,18 @@ class MLFQSchedulerTests(unittest.TestCase):
         self.assertEqual(segments[:3], [("A", 0, 2, 0), ("A", 2, 3, 1), ("B", 3, 4, 0)])
         self.assertEqual(segments[3][0:3], ("A", 4, 7))
 
+
+    def test_quantum_expiry_wins_over_simultaneous_higher_priority_arrival(self):
+        result = MLFQScheduler([2, 4, 8], boost_interval=None).run([
+            Process("A", 0, 10), Process("B", 6, 1)
+        ])
+        segments = [(s["pid"], s["start_time"], s["end_time"], s["queue_level"])
+                    for s in result["timeline"]]
+        self.assertEqual(segments[:4], [
+            ("A", 0, 2, 0), ("A", 2, 6, 1),
+            ("B", 6, 7, 0), ("A", 7, 11, 2)
+        ])
+
     def test_idle_period(self):
         result = MLFQScheduler().run([Process("late", 5, 2)])
         self.assertEqual(result["idle_periods"], [{"start_time": 0, "end_time": 5}])
