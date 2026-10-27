@@ -73,41 +73,71 @@ def save_results(rows):
 
     print(f"\nCSV saved: {path}")
 
-
+   
 def create_graphs(rows):
+    """Generate readable graphs with actual MLFQ configuration labels."""
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    # One graph per metric, with configuration comparisons
     for metric in METRICS:
-        plt.figure(figsize=(12, 6))
+        fig, axes = plt.subplots(
+            nrows=len(WORKLOADS),
+            ncols=1,
+            figsize=(14, 15)
+        )
 
-        for workload_name in WORKLOADS:
+        if len(WORKLOADS) == 1:
+            axes = [axes]
+
+        for ax, workload_name in zip(axes, WORKLOADS):
             selected = [
                 row for row in rows
                 if row["workload"] == workload_name
             ]
+
             labels = [
-                f"{row['quanta']}\nB={row['boost_interval']}"
+                f"Q={row['quanta']}\nB={row['boost_interval']}"
                 for row in selected
             ]
             values = [float(row[metric]) for row in selected]
 
-            # Plot each workload separately to keep comparisons readable.
-            plt.plot(
-                range(len(values)), values,
-                marker="o", label=workload_name
-            )
+            
+            ax.bar(range(len(values)), values)
 
-        plt.title(f"MLFQ Configuration Comparison: {metric}")
-        plt.xlabel("Configuration index (same order for each workload)")
-        plt.ylabel(metric.replace("_", " ").title())
-        plt.legend()
-        plt.tight_layout()
+            if all(value == 0 for value in values):
+                ax.text(
+                    0.5, 0.5,
+                    "All configurations: 0.00",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    fontsize=12
+                )
+
+            ax.set_xticks(range(len(labels)))
+
+            ax.set_xticklabels(
+                labels,
+                rotation=45,
+                ha="right",
+                fontsize=8
+            )
+            ax.set_title(f"{workload_name} Workload")
+            ax.set_ylabel(metric.replace("_", " ").title())
+            ax.grid(axis="y", linestyle="--", alpha=0.4)
+
+        fig.suptitle(
+            f"MLFQ Configuration Comparison: "
+            f"{metric.replace('_', ' ').title()}",
+            fontsize=14
+        )
+        fig.tight_layout(rect=[0, 0, 1, 0.97])
 
         path = OUTPUT_DIR / f"multi_{metric}.png"
-        plt.savefig(path, dpi=150)
-        plt.close()
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
         print(f"Graph saved: {path}")
+
 
 
 def main():
