@@ -1,6 +1,6 @@
 # MLFQ Tuner — Multilevel Feedback Queue Scheduler
 
-Dependency-free Python simulation of an MLFQ CPU scheduler with configurable queues, Round Robin quanta, arrivals, preemption, demotion, priority boosts, idle periods, timeline, and metrics.
+Dependency-free Python simulation of an MLFQ CPU scheduler with configurable queues, Round Robin quanta, arrivals, preemption, demotion, priority boosts, idle periods, execution timeline, and process/scheduler metrics.
 
 ## Run
 
@@ -27,37 +27,37 @@ print(results["timeline"])
 print(results["metrics"]["average_waiting_time"])
 ```
 
-`quanta` also configures the number of queues. Examples: `[1, 2, 4]`, `[2, 4, 8]`, `[4, 8, 16]`. Q0 is the highest priority. Set `boost_interval=None` to disable boosts. Use `scheduler.configure(quanta=[4, 8, 16], boost_interval=30)` between runs. Input workloads are cloned, so the same workload can be safely reused with another configuration.
+`quanta` also configures the number of queues. Examples: `[1, 2, 4]`, `[2, 4, 8]`, `[4, 8, 16]`. Q0 is highest priority. Set `boost_interval=None` to disable boosts. Reconfigure with `scheduler.configure(quanta=[4, 8, 16], boost_interval=30)`. Workloads are cloned on each run and can be reused unchanged.
 
-## Files
+## Project files
 
-- `mlfq/scheduler.py`: Process, TimelineSegment, MLFQScheduler and console formatter.
-- `mlfq/__init__.py`: public package exports.
+- `mlfq/scheduler.py`: `Process`, `TimelineSegment`, `MLFQScheduler`, and console formatter.
+- `mlfq/__init__.py`: public exports.
 - `example.py`: sample workload.
-- `tests/test_scheduler.py`: unit tests.
+- `tests/test_scheduler.py`: tests for scheduling behavior and edge cases.
 
-## Algorithm and policy
+## Algorithm
 
-1. New processes enter Q0. Simultaneous arrivals are deterministic (sorted by PID).
-2. Always choose the highest-priority non-empty queue; use FIFO Round Robin inside each queue.
-3. A process that consumes its full quantum without completing is demoted one level. Processes in the lowest queue remain there.
-4. A higher-priority arrival preempts a lower-queue process immediately. The interrupted process retains its remaining burst and unused quantum.
-5. At each boost interval, all ready processes are promoted to Q0 with a fresh Q0 quantum. A running lower-queue process is promoted at the boundary and requeued behind already-promoted ready processes. Boosts mitigate starvation.
-6. If all queues are empty, advance time to the next arrival and record the idle interval.
+1. New arrivals enter Q0. Simultaneous arrivals are deterministic (sorted by PID).
+2. The scheduler chooses the highest-priority non-empty queue and uses FIFO Round Robin within the queue.
+3. A process that consumes its full quantum without finishing is demoted by one level. Processes in the lowest queue stay there.
+4. An arrival in a higher-priority queue preempts lower-queue execution immediately. The interrupted process retains its remaining burst and unused quantum.
+5. At each boost interval, ready processes are promoted to Q0 with a fresh Q0 quantum. A running lower-level process is promoted at the boundary and requeued behind other promoted jobs. This reduces starvation.
+6. When no process is ready, the clock advances to the next arrival and the idle interval is recorded.
 
-This is a single-CPU teaching simulation; it does not model context-switch overhead or I/O blocking. Boost events are measured from time zero and are recorded during idle time as well.
+This is a single-CPU teaching simulation without context-switch overhead or I/O blocking. Boost events are measured from time zero and recorded during idle periods too.
 
-## Output
+## Results and metrics
 
-`run()` returns a dictionary with:
+`run()` returns a dictionary:
 
-- `timeline`: ordered segments with `pid`, `queue_level`, `queue_name`, `start_time`, `end_time`, and `duration` (ready for Gantt charts).
-- `processes`: final per-process state and metrics.
-- `idle_periods`: idle intervals; `boost_events`: boost timestamps.
-- `metrics` and top-level aliases: average waiting, turnaround and response times; CPU utilization; throughput; total simulation, busy and idle time; process count.
+- `timeline`: ordered execution segments with PID, queue level/name, start, end, and duration; ready for Gantt chart visualization.
+- `processes`: final process state and per-process metrics.
+- `idle_periods` and `boost_events`: recorded scheduler events.
+- `metrics` plus top-level aliases: average waiting, turnaround and response time; CPU utilization; throughput; total simulation, busy and idle time; process count.
 
-Formulas: turnaround = completion − arrival; waiting = turnaround − burst; response = first start − arrival. CPU utilization = busy time / total simulation time × 100. Throughput = completed processes / total simulation time. Empty workloads return zero-valued metrics.
+Formulas: turnaround = completion − arrival; waiting = turnaround − burst; response = first start − arrival. CPU utilization = busy time / total simulation time × 100. Throughput = completed processes / total simulation time. Empty workloads return zero-valued aggregate metrics.
 
 ## Validation
 
-PIDs must be unique non-empty strings or integers; arrival times must be non-negative; burst times, queue quanta, and enabled boost intervals must be positive finite numbers. Invalid workload item types and duplicate PIDs are rejected. Time values may be integers or floats.
+PIDs must be unique non-empty strings or integers, arrival times must be non-negative, and burst times, queue quanta, and enabled boost intervals must be positive finite numbers. Invalid process item types and duplicate PIDs are rejected. Time values can be integers or floats.
