@@ -36,11 +36,11 @@ class Process:
         if isinstance(self.pid, bool) or not isinstance(self.pid, (str, int)) or not str(self.pid):
             raise ValueError("pid must be a non-empty string or integer")
         self.arrival_time = _valid_time(self.arrival_time, "arrival_time")
-        self.burst_time = _valid_time(self.burst_time, "burst_time", positive=True)
+        self.burst_time = _valid_time(self.burst_time, "burst_time", True)
         if self.remaining_burst_time is None:
             self.remaining_burst_time = self.burst_time
         else:
-            self.remaining_burst_time = _valid_time(self.remaining_burst_time, "remaining_burst_time", positive=True)
+            self.remaining_burst_time = _valid_time(self.remaining_burst_time, "remaining_burst_time", True)
             if self.remaining_burst_time > self.burst_time:
                 raise ValueError("remaining_burst_time cannot exceed burst_time")
 
