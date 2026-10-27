@@ -1,154 +1,153 @@
 
-
 """
 MLFQ Tuner & Performance Analysis
-Uses the team's actual MLFQ scheduler to compare configurations.
+Tests multiple workloads using the team's actual scheduler.
 """
 
 import csv
 from pathlib import Path
-
 import matplotlib.pyplot as plt
 
 from mlfq.scheduler import MLFQScheduler, Process
 
-
-# Same workload for every configuration: fair comparison
-WORKLOAD = [
-    (1, 0, 10),
-    (2, 1, 5),
-    (3, 2, 8),
-    (4, 3, 2),
-    (5, 5, 6),
-    (6, 7, 3),
-    (7, 9, 12),
-    (8, 12, 4),
-]
-
-# Different queue time quanta to test
-QUANTA_OPTIONS = [
-    (1, 2, 4),
-    (2, 4, 8),
-    (3, 6, 12),
-]
-
-# Test disabled boosts and two boost intervals
-BOOST_OPTIONS = [None, 10, 20]
-
 OUTPUT_DIR = Path("tuner_results")
 
+# Each process: (PID, arrival time, CPU burst)
+WORKLOADS = {
+    "Interactive": [
+        (1, 0, 2), (2, 1, 1), (3, 2, 3), (4, 4, 1),
+        (5, 5, 2), (6, 7, 1), (7, 8, 3),
+    ],
+    "CPU Intensive": [
+        (1, 0, 20), (2, 0, 18), (3, 1, 25),
+        (4, 2, 15), (5, 3, 22), (6, 4, 17),
+    ],
+    "Long Gaps": [
+        (1, 0, 5), (2, 15, 3), (3, 35, 8),
+        (4, 60, 2), (5, 90, 6),
+    ],
+}
 
-def create_workload():
-    """Create a fresh set of processes for each experiment."""
+QUANTA_OPTIONS = [(1, 2, 4), (2, 4, 8), (3, 6, 12)]
+BOOST_OPTIONS = [None, 10, 20]
+
+METRICS = [
+    "average_waiting_time",
+    "average_turnaround_time",
+    "average_response_time",
+    "cpu_utilization",
+    "throughput",
+]
+
+
+def make_processes(workload):
+    """Create a fresh workload for every scheduler run."""
     return [
         Process(pid=pid, arrival_time=arrival, burst_time=burst)
-        for pid, arrival, burst in WORKLOAD
+        for pid, arrival, burst in workload
     ]
 
 
-def run_experiment(quanta, boost_interval):
-    """Run the real scheduler and collect its performance metrics."""
-    scheduler = MLFQScheduler(
-        quanta=quanta,
-        boost_interval=boost_interval,
-    )
+def run_experiment(workload_name, workload, quanta, boost):
+    scheduler = MLFQScheduler(quanta=quanta, boost_interval=boost)
+    result = scheduler.run(make_processes(workload))
 
-    result = scheduler.run(create_workload())
-    metrics = result["metrics"]
-
-    return {
-        "quanta": str(tuple(quanta)),
-        "boost_interval": (
-            "Disabled" if boost_interval is None else boost_interval
-        ),
-        "average_waiting_time": metrics["average_waiting_time"],
-        "average_turnaround_time": metrics["average_turnaround_time"],
-        "average_response_time": metrics["average_response_time"],
-        "cpu_utilization": metrics["cpu_utilization"],
-        "throughput": metrics["throughput"],
-        "total_simulation_time": metrics["total_simulation_time"],
+    row = {
+        "workload": workload_name,
+        "quanta": str(quanta),
+        "boost_interval": "Disabled" if boost is None else boost,
     }
+    row.update(result["metrics"])
+    return row
 
 
-def save_csv(results):
-    """Save all experiment results to a CSV file."""
+def save_results(rows):
     OUTPUT_DIR.mkdir(exist_ok=True)
-    csv_path = OUTPUT_DIR / "comparison_results.csv"
+    path = OUTPUT_DIR / "multi_workload_results.csv"
 
-    with csv_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=results[0].keys())
+    fields = list(rows[0].keys())
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
-        writer.writerows(results)
+        writer.writerows(rows)
 
-    print(f"\nResults saved to: {csv_path}")
+    print(f"\nCSV saved: {path}")
 
 
-def create_graphs(results):
-    """Generate comparison charts for the tested configurations."""
+def create_graphs(rows):
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    labels = [
-        f"{row['quanta']}\nBoost={row['boost_interval']}"
-        for row in results
-    ]
-
-    metrics_to_plot = [
-        ("average_waiting_time", "Average Waiting Time"),
-        ("average_turnaround_time", "Average Turnaround Time"),
-        ("average_response_time", "Average Response Time"),
-        ("cpu_utilization", "CPU Utilization (%)"),
-        ("throughput", "Throughput"),
-    ]
-
-    for metric, title in metrics_to_plot:
-        values = [float(row[metric]) for row in results]
-
+    # One graph per metric, with configuration comparisons
+    for metric in METRICS:
         plt.figure(figsize=(12, 6))
-        plt.bar(range(len(labels)), values)
-        plt.xticks(range(len(labels)), labels, rotation=45, ha="right")
-        plt.ylabel(title)
-        plt.title(f"MLFQ Configuration Comparison: {title}")
+
+        for workload_name in WORKLOADS:
+            selected = [
+                row for row in rows
+                if row["workload"] == workload_name
+            ]
+            labels = [
+                f"{row['quanta']}\nB={row['boost_interval']}"
+                for row in selected
+            ]
+            values = [float(row[metric]) for row in selected]
+
+            # Plot each workload separately to keep comparisons readable.
+            plt.plot(
+                range(len(values)), values,
+                marker="o", label=workload_name
+            )
+
+        plt.title(f"MLFQ Configuration Comparison: {metric}")
+        plt.xlabel("Configuration index (same order for each workload)")
+        plt.ylabel(metric.replace("_", " ").title())
+        plt.legend()
         plt.tight_layout()
 
-        filename = OUTPUT_DIR / f"{metric}.png"
-        plt.savefig(filename, dpi=150)
+        path = OUTPUT_DIR / f"multi_{metric}.png"
+        plt.savefig(path, dpi=150)
         plt.close()
-
-        print(f"Graph saved: {filename}")
+        print(f"Graph saved: {path}")
 
 
 def main():
-    results = []
+    rows = []
 
-    print("MLFQ Tuner & Performance Analysis")
-    print("=" * 40)
+    for workload_name, workload in WORKLOADS.items():
+        print(f"\n=== {workload_name} workload ===")
 
-    for quanta in QUANTA_OPTIONS:
-        for boost_interval in BOOST_OPTIONS:
-            row = run_experiment(quanta, boost_interval)
-            results.append(row)
+        for quanta in QUANTA_OPTIONS:
+            for boost in BOOST_OPTIONS:
+                row = run_experiment(
+                    workload_name, workload, quanta, boost
+                )
+                rows.append(row)
 
-            print(
-                f"Quanta={quanta}, Boost={boost_interval}, "
-                f"Waiting={row['average_waiting_time']:.2f}, "
-                f"Response={row['average_response_time']:.2f}, "
-                f"Turnaround={row['average_turnaround_time']:.2f}, "
-                f"CPU={row['cpu_utilization']:.2f}%, "
-                f"Throughput={row['throughput']:.4f}"
-            )
+                print(
+                    f"Quanta={quanta}, Boost={row['boost_interval']}, "
+                    f"Waiting={row['average_waiting_time']:.2f}, "
+                    f"Turnaround={row['average_turnaround_time']:.2f}, "
+                    f"Response={row['average_response_time']:.2f}, "
+                    f"CPU={row['cpu_utilization']:.2f}%, "
+                    f"Throughput={row['throughput']:.4f}"
+                )
 
-    # Lowest average waiting time is the selected criterion.
-    best = min(results, key=lambda row: row["average_waiting_time"])
+    print(f"\nCompleted {len(rows)} experiments.")
 
-    print("\nBest configuration by average waiting time:")
-    print(f"  Queue quanta: {best['quanta']}")
-    print(f"  Boost interval: {best['boost_interval']}")
-    print(f"  Average waiting time: {best['average_waiting_time']:.2f}")
+    # Best configuration per workload, using waiting time as the criterion.
+    print("\nBest configuration by workload (lowest average waiting time):")
+    for workload_name in WORKLOADS:
+        candidates = [r for r in rows if r["workload"] == workload_name]
+        best = min(candidates, key=lambda r: r["average_waiting_time"])
+        print(
+            f"{workload_name}: quanta={best['quanta']}, "
+            f"boost={best['boost_interval']}, "
+            f"waiting={best['average_waiting_time']:.2f}"
+        )
 
-    save_csv(results)
-    create_graphs(results)
-
-    print("\nAll experiments completed.")
+    save_results(rows)
+    create_graphs(rows)
+    print("\nAll multi-workload experiments completed.")
 
 
 if __name__ == "__main__":
