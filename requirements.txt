@@ -1,1 +1,1 @@
-# No third-party dependencies; uses the Python standard library only.
+# No third-party dependencies; this project uses the Python standard library.
