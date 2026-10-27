@@ -236,11 +236,8 @@ class MLFQScheduler:
                 self.queues[0].append(running)
                 running = None
                 continue
-            if any(self.queues[i] for i in range(level)):
-                running._ready_since = self._clock
-                self.queues[level].appendleft(running)
-                running = None
-                continue
+            # Quantum exhaustion still causes demotion if a higher-priority
+            # process arrives at exactly the same timestamp.
             if running._remaining_quantum == 0:
                 lower = min(level + 1, self.queue_count - 1)
                 running.current_queue_level = lower
@@ -248,6 +245,12 @@ class MLFQScheduler:
                 running._ready_since = self._clock
                 self.queues[lower].append(running)
                 running = None
+                continue
+            if any(self.queues[i] for i in range(level)):
+                running._ready_since = self._clock
+                self.queues[level].appendleft(running)
+                running = None
+                continue
 
         return self._result(jobs)
 
